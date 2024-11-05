@@ -1,4 +1,4 @@
-name: {{ENV_NAME}}
+name: kalshi
 channels:
   - conda-forge
 dependencies:

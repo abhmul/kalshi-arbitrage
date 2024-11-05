@@ -3,14 +3,13 @@ requires = ["setuptools >= 61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = {{PROJECT_TITLE}}
+name = "kalshi-arbitrage"
 version = "0.1.0"
 authors = [
   {name = "Abhijeet Mulgund", email = "abhmul@gmail.com"},
 ]
-]
 maintainers = [
-  {name = "Abhijeet Mulgund", email = "abhmul@gmail.com"},}
+  {name = "Abhijeet Mulgund", email = "abhmul@gmail.com"},
 ]
 readme = "README.md"
 license = {text = "MIT License"}
@@ -24,7 +23,7 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/abhmul/{{FOLDER_NAME}}.git"
+Repository = "https://github.com/abhmul/kalshi-arbitrage.git"
 
 [tool.setuptools.packages]
 find = {}  # Scanning implicit namespaces is active by default

@@ -1,4 +1,4 @@
-from typing import TypedDict, Sequence, Optional, Dict, Callable, Any
+from typing import TypedDict, Sequence, Optional, Callable, Any, cast
 from inspect import signature
 import numpy as np
 
@@ -11,7 +11,7 @@ class VectorizedInputReshapeOutput(TypedDict):
 
 def vectorized(
     arg_name: str | Sequence[str],
-    row_ndim: int | Dict[str, int],
+    row_ndim: int | dict[str, int],
     output_names: Optional[Sequence[str]] = None,
 ):
     """
@@ -37,7 +37,7 @@ def vectorized(
         decorated function vectorizes. If passed a sequence,
         will vectorize all arguments. Expects them to have
         the same batch shapes.
-    row_ndim : int | Dict[str, int]
+    row_ndim : int | dict[str, int]
         The number of dimensions of a single input that
         the function is vectorized over. The individual
         samples the function is vectorized over
@@ -113,7 +113,7 @@ def vectorized(
         def vectorized_func(*args, **kwargs):
             bound_sig = function_sig.bind(*args, **kwargs)
 
-            reshape_input_results: Dict[str, VectorizedInputReshapeOutput] = {}
+            reshape_input_results: dict[str, VectorizedInputReshapeOutput] = {}
             for arg in arg_name:
                 to_vect = bound_sig.arguments[arg]
 
@@ -191,3 +191,29 @@ def concatenate_broadcast(arrs: Sequence[np.ndarray], axis: int = -1):
 
 def stack_broadcast(arrs: Sequence[np.ndarray], axis: int = -1):
     return concatenate_broadcast([np.expand_dims(a, axis) for a in arrs], axis=axis)
+
+
+@vectorized(arg_name="arr", row_ndim=0)
+def dec2bitarray(
+    arr: np.ndarray | int,
+    num_bits: int,
+    little_endian: bool = False,
+    dtype=np.int8,
+) -> np.ndarray:
+    """
+    Expands integer array into binary array along last axis.
+    """
+    arr = cast(np.ndarray, arr)
+    shift_arr = np.arange(num_bits)[None]
+    if not little_endian:
+        shift_arr = shift_arr[:, ::-1]
+
+    res = (np.right_shift(arr[..., None], shift_arr) % 2).astype(dtype)
+    return res
+
+
+def enumerate_binary_inputs(dimension: int, dtype=np.int8) -> np.ndarray:
+    res = dec2bitarray(
+        np.arange(2**dimension, dtype=np.int32), num_bits=dimension, dtype=dtype
+    )
+    return res

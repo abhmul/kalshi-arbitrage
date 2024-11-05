@@ -1,1 +1,1 @@
-# {{PROJECT_TITLE}}
+# kalshi-arbitrage
