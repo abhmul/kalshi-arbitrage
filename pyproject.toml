@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = {{PROJECT_TITLE}}
+version = "0.1.0"
+authors = [
+  {name = "Abhijeet Mulgund", email = "abhmul@gmail.com"},
+]
+]
+maintainers = [
+  {name = "Abhijeet Mulgund", email = "abhmul@gmail.com"},}
+]
+readme = "README.md"
+license = {text = "MIT License"}
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Researchers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Private :: Do Not Upload",
+]
+
+[project.urls]
+Repository = "https://github.com/abhmul/{{FOLDER_NAME}}.git"
+
+[tool.setuptools.packages]
+find = {}  # Scanning implicit namespaces is active by default

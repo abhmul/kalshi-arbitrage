@@ -1,0 +1,19 @@
+name: {{ENV_NAME}}
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - black
+  - ipykernel
+  - matplotlib
+  - mypy
+  - pandas
+  - pip
+  - pytest
+  - anaconda::jupyter
+  - ca-certificates
+  - certifi
+  - openssl
+  - scipy
+  - numpy
+
