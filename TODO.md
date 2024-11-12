@@ -18,5 +18,7 @@
 1. Need to collect data for different strategies. I can start with temperature betting.
    - [ ] Download historical NWS data climate data for the different cities on Kalshi.
    - [ ] Download historical NWS forecast data at hour increments.
+2. Data Analysis
    - [ ] Plot distribution of differential between forecast and actual outcome for different cities.
    - [ ] Work out appropriate betting strategies that maximize expected profit, but minimize variance.
+   - [ ] Train LR model on input forecast data

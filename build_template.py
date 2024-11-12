@@ -15,6 +15,7 @@ PYPROJECT_TOML = Path("pyproject.toml")
 
 ALL_FILES = [ENVIRONMENT_YML, README, PYPROJECT_TOML]
 
+
 def replace_key(fname: Path, key: str, value: str):
     with open(fname, "r") as f:
         contents = f.read()
@@ -24,6 +25,7 @@ def replace_key(fname: Path, key: str, value: str):
 
     with open(fname, "w") as f:
         f.write(contents)
+
 
 def replace_key_in_files(files, key, value):
     for file in files:
@@ -43,7 +45,7 @@ if __name__ == "__main__":
 
     print("What name would like for your conda environment?")
     env_name = input()
-    replace_key_in_files(ALL_FILES,"ENV_NAME", env_name)
+    replace_key_in_files(ALL_FILES, "ENV_NAME", env_name)
 
     folder_name = Path(__file__).resolve().parent.name
     replace_key_in_files(ALL_FILES, "FOLDER_NAME", folder_name)
@@ -56,6 +58,6 @@ if __name__ == "__main__":
         pip install -e .
 
         Or copy-paste this command to run them together:
-        mamaba env create -f environment.yml && mamba activate {env_name} && pip install -e .
+        mamba env create -f environment.yml && mamba activate {env_name} && pip install -e .
         """
     )

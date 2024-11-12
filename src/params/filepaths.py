@@ -9,6 +9,7 @@ from pathlib import Path
 
 PROJECT_DIR = Path("../")
 DATA_DIR = PROJECT_DIR / "data"
+INPUTS_DIR = DATA_DIR / "inputs"
 MODELS_DIR = PROJECT_DIR / "models"
 PLOTS_DIR = PROJECT_DIR / "plots"
 LOGS_DIR = PROJECT_DIR / "logs"
