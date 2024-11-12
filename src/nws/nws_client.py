@@ -123,15 +123,13 @@ class NWSClient:
     ) -> ParsedCLIReport:
         # Extract relevant sections using regular expressions
 
-        date_match = re.search(
-            r"THE AUSTIN BERGSTROM CLIMATE SUMMARY FOR (.+?)\.\.\.", product_text
-        )
+        date_match = re.search(r"SUMMARY FOR (.+?)\.\.\.", product_text)
 
         temp_pattern = re.compile(
             r"""
             (MAXIMUM|MINIMUM|AVERAGE)\s+         # Match the label (MAXIMUM, MINIMUM, AVERAGE)
-            (\d+)\s+                             # Match the observed value
-            (\d{1,2}:\d{2}\s[APM]{2})?\s*        # Match the time (optional for AVERAGE)
+            (\d+)R?\s+                             # Match the observed value
+            (\d{1,2}:?\d{2}\s[APM]{2})?\s*        # Match the time (optional for AVERAGE)
             (\d+)?\s*                            # Match the record value (optional for AVERAGE)
             (\d{4})?\s*                          # Match the record year (optional for AVERAGE)
             (\d+)?\s*                            # Match the normal value (optional for AVERAGE)
@@ -144,21 +142,34 @@ class NWSClient:
         matches = temp_pattern.findall(product_text)
 
         temp_data: dict[str, Any] = {}
+        time_parse_with_col = "%I:%M %p"
+        time_parse_without_col = "%I%M %p"
+        date_parse = "%B %d %Y"
 
         for match in matches:
             label, observed_value, time, *_ = match
             if label == "MAXIMUM":
                 temp_data["max_temp"] = int(observed_value)
                 if time:
-                    temp_data["max_temp_time"] = datetime.strptime(
-                        f"{date_match.group(1)} {time}", "%B %d %Y %I:%M %p"  # type: ignore[union-attr]
-                    )
+                    if ":" in time:
+                        temp_data["max_temp_time"] = datetime.strptime(
+                            f"{date_match.group(1)} {time}", f"{date_parse} {time_parse_with_col}"  # type: ignore[union-attr]
+                        )
+                    else:
+                        temp_data["max_temp_time"] = datetime.strptime(
+                            f"{date_match.group(1)} {time}", f"{date_parse} {time_parse_without_col}"  # type: ignore[union-attr]
+                        )
             elif label == "MINIMUM":
                 temp_data["min_temp"] = int(observed_value)
                 if time:
-                    temp_data["min_temp_time"] = datetime.strptime(
-                        f"{date_match.group(1)} {time}", "%B %d %Y %I:%M %p"  # type: ignore[union-attr]
-                    )
+                    if ":" in time:
+                        temp_data["min_temp_time"] = datetime.strptime(
+                            f"{date_match.group(1)} {time}", f"{date_parse} {time_parse_with_col}"  # type: ignore[union-attr]
+                        )
+                    else:
+                        temp_data["min_temp_time"] = datetime.strptime(
+                            f"{date_match.group(1)} {time}", f"{date_parse} {time_parse_without_col}"  # type: ignore[union-attr]
+                        )
             elif label == "AVERAGE":
                 temp_data["avg_temp"] = int(observed_value)
 
@@ -185,10 +196,13 @@ class NWSClient:
         average_humidity_match = re.search(r"AVERAGE\s+(\d+)", product_text)
 
         # Convert date and time strings to date and datetime objects
+        # if date_match is None:
+        # print(product_text)
         summary_date_obj = datetime.strptime(date_match.group(1), "%B %d %Y").date()  # type: ignore[union-attr]
 
         return ParsedCLIReport(
             summary_date=summary_date_obj,
+            raw_text=product_text,
             max_temp=temp_data.get("max_temp"),
             max_temp_time=temp_data.get("max_temp_time"),
             min_temp=temp_data.get("min_temp"),

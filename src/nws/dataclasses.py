@@ -38,6 +38,7 @@ class CLIInfo:
 @dataclass
 class ParsedCLIReport:
     summary_date: date
+    raw_text: str
     max_temp: int | None = None
     max_temp_time: datetime | None = None
     min_temp: int | None = None
