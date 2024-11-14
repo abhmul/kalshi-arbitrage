@@ -25,10 +25,12 @@ ACIS_API_BASE = URL("https://data.rcc-acis.org/")
 
 
 class StationID(Enum):
-    NYC = "NYC"
-    AUS = "AUS"
-    MIA = "MIA"
-    MDW = "MDW"
+    NYC = "NYC"  # New York, NY
+    AUS = "AUS"  # Austin, TX
+    MIA = "MIA"  # Miami, FL
+    MDW = "MDW"  # Chicago, IL
+    PIR = "PIR"  # Pierre, SD
+    AW254 = "AW254"
 
     def __str__(self):
         return self.value
@@ -39,6 +41,7 @@ STATION_TZ = {
     StationID.AUS: pytz.timezone("America/Chicago"),
     StationID.MIA: pytz.timezone("America/New_York"),
     StationID.MDW: pytz.timezone("America/Chicago"),
+    StationID.PIR: pytz.timezone("America/Chicago"),
 }
 
 BASE_TZ = pytz.timezone("America/Chicago")

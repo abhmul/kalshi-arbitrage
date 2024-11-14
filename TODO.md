@@ -1,6 +1,10 @@
 # TODO
 
+- [ ] Setup error bars on timeseries data
+
 ## Basic Design Ideas
+
+### Poller for CLI
 
 ### Server/Client Setup
 

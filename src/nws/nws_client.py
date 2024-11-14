@@ -80,11 +80,16 @@ class NWSClient:
 
         return self.parse_forecast_json(res, lat, lon)
 
-    def get_cli_urls(self, stationid: StationID) -> list[CLIInfo]:
+    def _request_cli_urls(self, stationid: StationID) -> dict:
         url = CLI_API_BASE / "locations" / f"{stationid}"
         response = requests.get(url)
         response.raise_for_status()
         res = response.json()
+
+        return res
+
+    def get_cli_urls(self, stationid: StationID) -> list[CLIInfo]:
+        res = self._request_cli_urls(stationid)
 
         url_info = []
         for url_data in res["@graph"]:
@@ -277,10 +282,12 @@ class NWSClient:
         return cli
 
     @cached(cache=TTLCache(maxsize=1024, ttl=3600))
-    def get_timeseries(self, stationid: StationID, start: datetime, end: datetime):
+    def _request_observations_from_station(
+        self, stationid: StationID, start: datetime, end: datetime, radius: int = 0
+    ):
         url = TIME_SERIES_BASE
         params = {
-            "stid": f"k{stationid.value.lower()}",
+            "radius": f"k{stationid.value.lower()},{radius}",
             "start": start.astimezone(pytz.utc).strftime("%Y%m%d%H%M"),
             "end": end.astimezone(pytz.utc).strftime("%Y%m%d%H%M"),
             "vars": "air_temp,wind_speed,wind_direction,relative_humidity,air_temp_high_6_hour,air_temp_high_24_hour",
@@ -291,15 +298,31 @@ class NWSClient:
 
         res = response.json()
 
-        data = res["STATION"][0]["OBSERVATIONS"]
-        df = pd.DataFrame(data)
-        df["date_time"] = pd.to_datetime(df["date_time"])
-        df.set_index("date_time", inplace=True)
+        return res
 
-        df = df.tz_convert(STATION_TZ[stationid])
-        df["time"] = df.index.time  # type: ignore[attr-defined]
+    def get_timeseries(
+        self, stationid: StationID, start: datetime, end: datetime, radius: int = 0
+    ) -> list[pd.DataFrame]:
+        res = self._request_observations_from_station(
+            stationid, start, end, radius=radius
+        )
 
-        return df
+        station_dfs = []
+        for station_obs in res["STATION"]:
+            data = station_obs["OBSERVATIONS"]
+            df = pd.DataFrame(data)
+            df["date_time"] = pd.to_datetime(df["date_time"])
+            df.set_index("date_time", inplace=True)
+
+            df = df.tz_convert(STATION_TZ[stationid])
+            df["time"] = df.index.time  # type: ignore[attr-defined]
+            df["station_id"] = station_obs["STID"]
+            df["station_name"] = station_obs["NAME"]
+            df["distance"] = station_obs["DISTANCE"]
+
+            station_dfs.append(df)
+
+        return station_dfs
 
 
 #     def get_metadata(self):
