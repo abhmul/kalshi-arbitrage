@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, date
 from enum import Enum
 from urlpath import URL  # type: ignore[import-untyped]
@@ -36,35 +36,31 @@ class CLIInfo:
 
 
 @dataclass
-class ParsedCLIReport:
+class CLI:
+    issuance_time: datetime
+    issuing_office: str
     summary_date: date
     raw_text: str
-    max_temp: int | None = None
-    max_temp_time: datetime | None = None
-    min_temp: int | None = None
-    min_temp_time: datetime | None = None
-    avg_temp: int | None = None
-    precipitation: float | None = None
-    precipitation_month_to_date: float | None = None
-    precipitation_since_sep_1: float | None = None
-    precipitation_since_jan_1: float | None = None
-    highest_wind_speed: int | None = None
-    highest_wind_direction: str | None = None
-    highest_gust_speed: int | None = None
-    highest_gust_direction: str | None = None
-    average_wind_speed: float | None = None
-    average_sky_cover: float | None = None
-    highest_humidity: int | None = None
-    lowest_humidity: int | None = None
-    average_humidity: int | None = None
+    max_temp: int
+    max_temp_time: datetime
+    min_temp: int
+    min_temp_time: datetime
+    avg_temp: int
+    valid_time: datetime | None = None
 
+    # precipitation: float | None = None
+    # precipitation_month_to_date: float | None = None
+    # precipitation_since_sep_1: float | None = None
+    # precipitation_since_jan_1: float | None = None
+    # highest_wind_speed: int | None = None
+    # highest_wind_direction: str | None = None
+    # highest_gust_speed: int | None = None
+    # highest_gust_direction: str | None = None
+    # average_wind_speed: float | None = None
+    # average_sky_cover: float | None = None
+    # highest_humidity: int | None = None
+    # lowest_humidity: int | None = None
+    # average_humidity: int | None = None
 
-@dataclass
-class CLI:
-    id: str
-    url: URL
-    issuance_time: datetime
-    product_code: str
-    product_name: str
-    issuing_office: str
-    report: ParsedCLIReport
+    def without_raw_text(self):
+        return replace(self, raw_text="...")

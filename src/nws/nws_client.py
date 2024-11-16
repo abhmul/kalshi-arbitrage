@@ -1,6 +1,7 @@
-from typing import Any
+from typing import Any, cast
 import requests  # type: ignore[import-untyped]
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+from dateutil import parser
 import re
 import pytz
 
@@ -80,206 +81,180 @@ class NWSClient:
 
         return self.parse_forecast_json(res, lat, lon)
 
-    def _request_cli_urls(self, stationid: StationID) -> dict:
-        url = CLI_API_BASE / "locations" / f"{stationid}"
+    def cli_url(self, stationid: StationID, version: int = 1) -> URL:
+        assert version <= 50  # NWS only stores 50 versions at this url
+        url = NWS_FORECAST_HOME / "product.php"
+        url = url.add_query(
+            site=SITE_ID[stationid],
+            issuedby=stationid,
+            product="CLI",
+            format="txt",
+            glossary=0,
+            version=version,
+        )
+        return url
+
+    def _request_cli_data(
+        self, stationid: StationID, version: int = 1
+    ) -> requests.Response:
+        url = self.cli_url(stationid, version)
         response = requests.get(url)
         response.raise_for_status()
-        res = response.json()
 
-        return res
+        return response
 
-    def get_cli_urls(self, stationid: StationID) -> list[CLIInfo]:
-        res = self._request_cli_urls(stationid)
+    def get_cli_data(self, stationid: StationID, version: int = 1) -> CLI:
+        res = self._request_cli_data(stationid, version)
 
-        url_info = []
-        for url_data in res["@graph"]:
-            info = CLIInfo(
-                url=URL(url_data["@id"]),
-                id=url_data["id"],
-                wmo_collective_id=url_data["wmoCollectiveId"],
-                issuing_office=url_data["issuingOffice"],
-                issuance_time=datetime.strptime(
-                    url_data["issuanceTime"], self.DATETIME_FORMAT
-                ),
+        return self._parse_cli_response(res)
+
+    @staticmethod
+    def _parse_cli_response(
+        response: requests.Response, station: StationID | None = None
+    ) -> CLI:
+        lines = response.text.splitlines()
+        for i in range(len(lines) - 3):
+            match_start = (
+                (
+                    f"CLI{station}" in lines[i]
+                    if station is not None
+                    else any(f"CLI{s}" for s in StationID)
+                )
+                and "CLIMATE REPORT" in lines[i + 2]
+                and "NATIONAL WEATHER SERVICE" in lines[i + 3]
             )
-            url_info.append(info)
+            if match_start:
+                match_start_i = i - 2
+            match_end = "$$" in lines[i]
+            if match_end:
+                match_end_i = i
 
-        return url_info
-
-    @cached(cache=TTLCache(maxsize=1024, ttl=3600))
-    def get_cli_data(self, url: URL) -> CLI:
-        response = requests.get(url)
-        response.raise_for_status()
-        res = response.json()
-
-        return self.parse_json(res)
-
-    def get_all_cli_data(self, stationid: StationID) -> list[CLI]:
-        urls = self.get_cli_urls(stationid)
-        cli_data = []
-        for url_info in urls:
-            data = self.get_cli_data(url_info.url)
-            cli_data.append(data)
-        return cli_data
+        cli_text = "\n".join(lines[match_start_i : match_end_i + 1])
+        return NWSClient._parse_product_text(cli_text)
 
     @staticmethod
     def _parse_product_text(
         product_text: str,
-    ) -> ParsedCLIReport:
+    ) -> CLI:
         # Extract relevant sections using regular expressions
 
-        date_match = re.search(r"SUMMARY FOR (.+?)\.\.\.", product_text)
+        lines = product_text.splitlines()
 
-        temp_pattern = re.compile(
-            r"""
-            (MAXIMUM|MINIMUM|AVERAGE)\s+         # Match the label (MAXIMUM, MINIMUM, AVERAGE)
-            (\d+)R?\s+                             # Match the observed value
-            (\d{1,2}:?\d{2}\s[APM]{2})?\s*        # Match the time (optional for AVERAGE)
-            (\d+)?\s*                            # Match the record value (optional for AVERAGE)
-            (\d{4})?\s*                          # Match the record year (optional for AVERAGE)
-            (\d+)?\s*                            # Match the normal value (optional for AVERAGE)
-            ([+-]?\d+)?\s*                       # Match the departure from normal (optional for AVERAGE)
-            (\d+)?                               # Match the last year value (optional for AVERAGE)
-        """,
-            re.VERBOSE,
-        )
+        # Extract the site - line 1
+        line_i = 0
+        site_re = re.compile(r"CDUS\d+\sK([A-Z]{3})")
+        while (match := re.search(site_re, lines[line_i])) is None:
+            line_i += 1
+            if line_i >= len(lines):
+                raise ValueError("Could not find the site in the product text")
+        site = match.group(1)
+        line_i += 1
 
-        matches = temp_pattern.findall(product_text)
+        station_re = re.compile(r"CLI([A-Z]{3})")
+        while (match := re.search(station_re, lines[line_i])) is None:
+            line_i += 1
+            if line_i >= len(lines):
+                raise ValueError("Could not find the station in the product text")
+        station = StationID(match.group(1))
+        line_i += 1
 
-        temp_data: dict[str, Any] = {}
-        time_parse_with_col = "%I:%M %p"
-        time_parse_without_col = "%I%M %p"
-        date_parse = "%B %d %Y"
+        # Check integrity of following lines
+        assert lines[line_i].strip() == ""
+        line_i += 1
+        assert lines[line_i].strip() == "CLIMATE REPORT"
+        line_i += 1
+        assert lines[line_i].strip().startswith("NATIONAL WEATHER SERVICE")
+        line_i += 1
 
-        for match in matches:
-            label, observed_value, time, *_ = match
-            if label == "MAXIMUM":
-                temp_data["max_temp"] = int(observed_value)
-                if time:
-                    if ":" in time:
-                        temp_data["max_temp_time"] = datetime.strptime(
-                            f"{date_match.group(1)} {time}", f"{date_parse} {time_parse_with_col}"  # type: ignore[union-attr]
-                        )
-                    else:
-                        temp_data["max_temp_time"] = datetime.strptime(
-                            f"{date_match.group(1)} {time}", f"{date_parse} {time_parse_without_col}"  # type: ignore[union-attr]
-                        )
-            elif label == "MINIMUM":
-                temp_data["min_temp"] = int(observed_value)
-                if time:
-                    if ":" in time:
-                        temp_data["min_temp_time"] = datetime.strptime(
-                            f"{date_match.group(1)} {time}", f"{date_parse} {time_parse_with_col}"  # type: ignore[union-attr]
-                        )
-                    else:
-                        temp_data["min_temp_time"] = datetime.strptime(
-                            f"{date_match.group(1)} {time}", f"{date_parse} {time_parse_without_col}"  # type: ignore[union-attr]
-                        )
-            elif label == "AVERAGE":
-                temp_data["avg_temp"] = int(observed_value)
+        # Extract the issuance datetime
+        # Add a colon to the issuance datetime string
+        split_issuance = lines[line_i].split()
+        if len(split_issuance[0]) == 3:
+            split_issuance[0] = "0" + split_issuance[0]
+        split_issuance[0] = split_issuance[0][:2] + ":" + split_issuance[0][2:]
+        issuance_datetime = parser.parse(" ".join(split_issuance), ignoretz=True)
+        issuance_datetime = STATION_TZ[station].localize(issuance_datetime)
+        line_i += 1
 
-        highest_wind_speed_match = re.search(
-            r"HIGHEST WIND SPEED\s+(\d+)", product_text
-        )
-        highest_wind_direction_match = re.search(
-            r"HIGHEST WIND DIRECTION\s+(\w+)", product_text
-        )
-        highest_gust_speed_match = re.search(
-            r"HIGHEST GUST SPEED\s+(\d+)", product_text
-        )
-        highest_gust_direction_match = re.search(
-            r"HIGHEST GUST DIRECTION\s+(\w+)", product_text
-        )
-        average_wind_speed_match = re.search(
-            r"AVERAGE WIND SPEED\s+(\d+\.\d+)", product_text
-        )
-        average_sky_cover_match = re.search(
-            r"AVERAGE SKY COVER\s+(\d+\.\d+)", product_text
-        )
-        highest_humidity_match = re.search(r"HIGHEST\s+(\d+)", product_text)
-        lowest_humidity_match = re.search(r"LOWEST\s+(\d+)", product_text)
-        average_humidity_match = re.search(r"AVERAGE\s+(\d+)", product_text)
+        # Summary date
+        summary_date_re = re.compile(r"CLIMATE\sSUMMARY\sFOR\s(.+?)\.\.\.")
+        while (match := re.search(summary_date_re, lines[line_i])) is None:
+            line_i += 1
+            if line_i >= len(lines):
+                raise ValueError("Could not find the summary date in the product text")
+        summary_date = parser.parse(match.group(1)).date()
+        line_i += 1
 
-        # Convert date and time strings to date and datetime objects
-        # if date_match is None:
-        # print(product_text)
-        summary_date_obj = datetime.strptime(date_match.group(1), "%B %d %Y").date()  # type: ignore[union-attr]
+        # Valid time if it is there - line 11
+        valid_datetime = None
+        if "VALID" in lines[line_i]:
+            match = re.search(
+                r"AS\s+OF\s+(\d{4}\s+(AM|PM))\s+LOCAL\s+TIME", lines[line_i]
+            )
+            assert match is not None
+            valid_time = datetime.strptime(match.group(1), "%I%M %p").time()
+            valid_datetime = datetime.combine(summary_date, valid_time)
+            valid_datetime = STATION_TZ[station].localize(valid_datetime)
+            line_i += 1
 
-        return ParsedCLIReport(
-            summary_date=summary_date_obj,
+        # Extract the temperature data
+        temp_re = re.compile(r"TEMPERATURE\s+\(F\)")
+        while (match := re.search(temp_re, lines[line_i])) is None:
+            line_i += 1
+            if line_i >= len(lines):
+                raise ValueError(
+                    "Could not find the temperature data in the product text"
+                )
+        line_i += 1
+
+        if (issuance_datetime.date() - summary_date) == timedelta(days=1):
+            assert "YESTERDAY" == lines[line_i].strip()
+        elif (issuance_datetime.date() - summary_date) == timedelta(days=0):
+            assert "TODAY" == lines[line_i].strip()
+        else:
+            raise ValueError("Could not find the correct day for the temperature data")
+        line_i += 1
+
+        # Maximum
+        match = re.search(r"MAXIMUM\s+(\d+)\s+(\d{1,2}:\d{2}\s(PM|AM))", lines[line_i])
+        assert match is not None
+        max_temp = int(match.group(1))
+        max_temp_time = datetime.strptime(match.group(2), "%I:%M %p").time()
+        max_temp_datetime = STATION_TZ[station].localize(
+            datetime.combine(summary_date, max_temp_time)
+        )
+        line_i += 1
+
+        # Minimum
+        match = re.search(r"MINIMUM\s+(\d+)\s+(\d{1,2}:\d{2}\s(PM|AM))", lines[line_i])
+        assert match is not None
+        min_temp = int(match.group(1))
+        min_temp_time = datetime.strptime(match.group(2), "%I:%M %p").time()
+        min_temp_datetime = STATION_TZ[station].localize(
+            datetime.combine(summary_date, min_temp_time)
+        )
+        line_i += 1
+
+        # Average
+        match = re.search(r"AVERAGE\s+(\d+)", lines[line_i])
+        assert match is not None
+        avg_temp = int(match.group(1))
+        line_i += 1
+
+        # TODO Precipitation, Snowfall, Wind, Sky Cover, Weather Conditions, Relative Humidity
+
+        return CLI(
+            issuance_time=issuance_datetime,
+            issuing_office=site,
+            summary_date=summary_date,
             raw_text=product_text,
-            max_temp=temp_data.get("max_temp"),
-            max_temp_time=temp_data.get("max_temp_time"),
-            min_temp=temp_data.get("min_temp"),
-            min_temp_time=temp_data.get("min_temp_time"),
-            avg_temp=temp_data.get("avg_temp"),
-            # precipitation=precipitation_data["day"],
-            # precipitation_month_to_date=precipitation_data["month_to_date"],
-            # precipitation_since_sep_1=precipitation_data["since_sep_1"],
-            # precipitation_since_jan_1=precipitation_data["since_jan_1"],
-            highest_wind_speed=(
-                int(highest_wind_speed_match.group(1))
-                if highest_wind_speed_match
-                else None
-            ),
-            highest_wind_direction=(
-                highest_wind_direction_match.group(1)
-                if highest_wind_direction_match
-                else None
-            ),
-            highest_gust_speed=(
-                int(highest_gust_speed_match.group(1))
-                if highest_gust_speed_match
-                else None
-            ),
-            highest_gust_direction=(
-                highest_gust_direction_match.group(1)
-                if highest_gust_direction_match
-                else None
-            ),
-            average_wind_speed=(
-                float(average_wind_speed_match.group(1))
-                if average_wind_speed_match
-                else None
-            ),
-            average_sky_cover=(
-                float(average_sky_cover_match.group(1))
-                if average_sky_cover_match
-                else None
-            ),
-            highest_humidity=(
-                int(highest_humidity_match.group(1)) if highest_humidity_match else None
-            ),
-            lowest_humidity=(
-                int(lowest_humidity_match.group(1)) if lowest_humidity_match else None
-            ),
-            average_humidity=(
-                int(average_humidity_match.group(1)) if average_humidity_match else None
-            ),
+            max_temp=max_temp,
+            max_temp_time=max_temp_datetime,
+            min_temp=min_temp,
+            min_temp_time=min_temp_datetime,
+            avg_temp=avg_temp,
+            valid_time=valid_datetime,
         )
-
-    @staticmethod
-    def parse_json(json_data: dict) -> CLI:
-        issuance_time = datetime.fromisoformat(json_data["issuanceTime"])
-        product_code = json_data["productCode"]
-        product_name = json_data["productName"]
-        issuing_office = json_data["issuingOffice"]
-        product_text = json_data["productText"]
-        url = URL(json_data["@id"])
-
-        # print(product_text)
-        parsed_report = NWSClient._parse_product_text(product_text)
-        cli = CLI(
-            url=url,
-            id=json_data["id"],
-            issuance_time=issuance_time,
-            product_code=product_code,
-            product_name=product_name,
-            issuing_office=issuing_office,
-            report=parsed_report,
-        )
-
-        return cli
 
     @cached(cache=TTLCache(maxsize=1024, ttl=3600))
     def _request_observations_from_station(

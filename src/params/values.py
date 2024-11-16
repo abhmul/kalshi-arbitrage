@@ -11,9 +11,10 @@ DEMO_API_ID = "e4b4f20b-7100-4744-918d-adee3b1e44f2"
 API_ID = "18b939a7-3413-4ec5-b942-5792c0f5b285"
 
 # NWS API
+NWS_FORECAST_HOME = URL("https://forecast.weather.gov")
 NWS_API_BASE = URL("https://api.weather.gov")
 NWS_POINTS = NWS_API_BASE / "points"
-CLI_API_BASE = URL("https://api.weather.gov/products/types/CLI")
+# CLI_API_BASE = URL("https://api.weather.gov/products/types/CLI")
 TIME_SERIES_BASE = URL("https://api.synopticdata.com/v2/stations/timeseries")
 
 PUBLIC_TOKEN = "b950a4463c7e4053a4fcd1f1457fff17"
@@ -30,7 +31,6 @@ class StationID(Enum):
     MIA = "MIA"  # Miami, FL
     MDW = "MDW"  # Chicago, IL
     PIR = "PIR"  # Pierre, SD
-    AW254 = "AW254"
 
     def __str__(self):
         return self.value
@@ -42,6 +42,19 @@ STATION_TZ = {
     StationID.MIA: pytz.timezone("America/New_York"),
     StationID.MDW: pytz.timezone("America/Chicago"),
     StationID.PIR: pytz.timezone("America/Chicago"),
+}
+
+TZ_INFOS = {
+    "EST": pytz.timezone("America/New_York"),
+    "CST": pytz.timezone("America/Chicago"),
+}
+
+SITE_ID = {
+    StationID.NYC: "OKX",
+    StationID.AUS: "EWX",
+    StationID.MIA: "MFL",
+    StationID.MDW: "LOT",
+    StationID.PIR: "ABR",
 }
 
 BASE_TZ = pytz.timezone("America/Chicago")

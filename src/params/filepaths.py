@@ -20,3 +20,9 @@ KEYS_DIR = PROJECT_DIR / "keys"
 KALSHI_KEY = KEYS_DIR / "kalshi_key.key"
 DEMO_KALSHI_KEY = KEYS_DIR / "demo_kalshi_key.key"
 LEGACY_DEMO_KALSHI_KEY = KEYS_DIR / "demo_kalshi_key.legacy.key"
+
+# Data
+ONE_MINUTE_OBSERVATIONS = INPUTS_DIR / "one_minute"
+CLI_OBSERVATIONS = INPUTS_DIR / "cli"
+TEMP_OBSERVATIONS = INPUTS_DIR / "temp"
+STATION_SPECS = INPUTS_DIR / "station_specs.csv"
