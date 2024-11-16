@@ -22,4 +22,4 @@ dependencies:
   - cfgrib
   - urlpath
   - cachetools
-
+  - tqdm

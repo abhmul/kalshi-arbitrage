@@ -1,4 +1,5 @@
 from dataclasses import dataclass, replace
+from pathlib import Path
 from datetime import datetime, date
 from enum import Enum
 from urlpath import URL  # type: ignore[import-untyped]
@@ -41,11 +42,11 @@ class CLI:
     issuing_office: str
     summary_date: date
     raw_text: str
-    max_temp: int
-    max_temp_time: datetime
-    min_temp: int
-    min_temp_time: datetime
-    avg_temp: int
+    max_temp: int | None
+    max_temp_time: datetime | None
+    min_temp: int | None
+    min_temp_time: datetime | None
+    avg_temp: int | None
     valid_time: datetime | None = None
 
     # precipitation: float | None = None
@@ -64,3 +65,9 @@ class CLI:
 
     def without_raw_text(self):
         return replace(self, raw_text="...")
+
+
+@dataclass
+class DownloadCLIsResult:
+    written_filepaths: list[Path]
+    downloaded_filepaths: list[Path]

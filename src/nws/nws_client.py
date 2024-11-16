@@ -8,10 +8,13 @@ import pytz
 from cachetools import cached, TTLCache  # type: ignore[import-untyped]
 from urlpath import URL  # type: ignore[import-untyped]
 import pandas as pd
+from tqdm import tqdm  # type: ignore[import-untyped]
 
 from ..params import *
+from ..file_utils import pathlike, safe_open_dir
 
 from .dataclasses import *
+from .utils import normalize_time_str
 
 
 class NWSClient:
@@ -82,7 +85,7 @@ class NWSClient:
         return self.parse_forecast_json(res, lat, lon)
 
     def cli_url(self, stationid: StationID, version: int = 1) -> URL:
-        assert version <= 50  # NWS only stores 50 versions at this url
+        assert version <= NUM_CLI_VERSIONS  # NWS only stores 50 versions at this url
         url = NWS_FORECAST_HOME / "product.php"
         url = url.add_query(
             site=SITE_ID[stationid],
@@ -161,7 +164,7 @@ class NWSClient:
         # Check integrity of following lines
         assert lines[line_i].strip() == ""
         line_i += 1
-        assert lines[line_i].strip() == "CLIMATE REPORT"
+        assert lines[line_i].strip().startswith("CLIMATE REPORT")
         line_i += 1
         assert lines[line_i].strip().startswith("NATIONAL WEATHER SERVICE")
         line_i += 1
@@ -216,30 +219,66 @@ class NWSClient:
         line_i += 1
 
         # Maximum
-        match = re.search(r"MAXIMUM\s+(\d+)\s+(\d{1,2}:\d{2}\s(PM|AM))", lines[line_i])
-        assert match is not None
-        max_temp = int(match.group(1))
-        max_temp_time = datetime.strptime(match.group(2), "%I:%M %p").time()
-        max_temp_datetime = STATION_TZ[station].localize(
-            datetime.combine(summary_date, max_temp_time)
+        match = re.search(
+            r"MAXIMUM\s+(\d+|(MM))R?\s+((\d{1,2}:?\d{2}\s(PM|AM))|(MM))", lines[line_i]
         )
+        assert match is not None
+        if match.group(1) == "MM":
+            max_temp = None
+        else:
+            max_temp = int(match.group(1))
+        if match.group(3) == "MM":
+            max_temp_datetime = None
+        else:
+            max_temp_time_str = normalize_time_str(match.group(3))
+            max_temp_time = datetime.strptime(max_temp_time_str, "%I:%M %p").time()
+            max_temp_datetime = STATION_TZ[station].localize(
+                datetime.combine(summary_date, max_temp_time)
+            )
         line_i += 1
 
         # Minimum
-        match = re.search(r"MINIMUM\s+(\d+)\s+(\d{1,2}:\d{2}\s(PM|AM))", lines[line_i])
-        assert match is not None
-        min_temp = int(match.group(1))
-        min_temp_time = datetime.strptime(match.group(2), "%I:%M %p").time()
-        min_temp_datetime = STATION_TZ[station].localize(
-            datetime.combine(summary_date, min_temp_time)
+        min_re = re.compile(
+            r"MINIMUM\s+(\d+|(MM))R?\s+((\d{1,2}:?\d{2}\s(PM|AM))|(MM))"
         )
+        tod_yest_re = re.compile(r"(TODAY|YESTERDAY)")
+        while (match := re.search(min_re, lines[line_i])) is None:
+            line_i += 1
+            if re.search(tod_yest_re, lines[line_i]) is not None or line_i >= len(
+                lines
+            ):
+                raise ValueError(
+                    "Could not find the minimum temperature data in the product text"
+                )
+        if match.group(1) == "MM":
+            min_temp = None
+        else:
+            min_temp = int(match.group(1))
+        if match.group(3) == "MM":
+            min_temp_datetime = None
+        else:
+            min_temp_time_str = normalize_time_str(match.group(3))
+            min_temp_time = datetime.strptime(min_temp_time_str, "%I:%M %p").time()
+            min_temp_datetime = STATION_TZ[station].localize(
+                datetime.combine(summary_date, min_temp_time)
+            )
         line_i += 1
 
         # Average
-        match = re.search(r"AVERAGE\s+(\d+)", lines[line_i])
-        assert match is not None
-        avg_temp = int(match.group(1))
-        line_i += 1
+        avg_re = re.compile(r"AVERAGE\s+(\d+|(MM))R?")
+        while (match := re.search(avg_re, lines[line_i])) is None:
+            line_i += 1
+            if re.search(tod_yest_re, lines[line_i]) is not None or line_i >= len(
+                lines
+            ):
+                raise ValueError(
+                    "Could not find the average temperature data in the product text"
+                )
+        if match.group(1) == "MM":
+            avg_temp = None
+        else:
+            avg_temp = int(match.group(1))
+            line_i += 1
 
         # TODO Precipitation, Snowfall, Wind, Sky Cover, Weather Conditions, Relative Humidity
 
@@ -298,6 +337,39 @@ class NWSClient:
             station_dfs.append(df)
 
         return station_dfs
+
+    @pathlike("output_dir")
+    def download_cli_data(
+        self,
+        stationid: StationID,
+        output_dir: Path,
+        versions: int | list | None = None,
+        overwrite: bool = False,
+    ) -> DownloadCLIsResult:
+        if versions is None:
+            versions = list(range(1, NUM_CLI_VERSIONS + 1))
+        elif isinstance(versions, int):
+            versions = [versions]
+
+        written_fps = []
+        downloaded_fps = []
+        prog = tqdm(versions) if len(versions) > 1 else versions
+        for version in prog:
+            cli = self.get_cli_data(stationid, version)
+            output_fp = safe_open_dir(output_dir / f"{stationid}") / (
+                f"cli.{stationid}."
+                f"issued-{cli.issuance_time.strftime(PATH_DATETIME_FORMAT)}."
+                f"summary-{cli.summary_date.strftime(PATH_DATE_FORMAT)}.txt"
+            )
+            downloaded_fps.append(output_fp)
+            if not output_fp.exists() or overwrite:
+                with open(output_fp, "w") as f:
+                    f.write(cli.raw_text)
+                written_fps.append(output_fp)
+
+        return DownloadCLIsResult(
+            written_filepaths=written_fps, downloaded_filepaths=downloaded_fps
+        )
 
 
 #     def get_metadata(self):

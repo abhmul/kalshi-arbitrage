@@ -36,6 +36,9 @@ class StationID(Enum):
         return self.value
 
 
+NUM_CLI_VERSIONS = 50
+
+
 STATION_TZ = {
     StationID.NYC: pytz.timezone("America/New_York"),
     StationID.AUS: pytz.timezone("America/Chicago"),
