@@ -1,9 +1,11 @@
+from io import StringIO
 from typing import Any, cast
 import requests  # type: ignore[import-untyped]
 from datetime import datetime, date, timedelta
 from dateutil import parser
 import re
 import pytz
+from collections import defaultdict
 
 from cachetools import cached, TTLCache  # type: ignore[import-untyped]
 from urlpath import URL  # type: ignore[import-untyped]
@@ -84,7 +86,8 @@ class NWSClient:
 
         return self.parse_forecast_json(res, lat, lon)
 
-    def cli_url(self, stationid: StationID, version: int = 1) -> URL:
+    @staticmethod
+    def cli_url(stationid: StationID, version: int = 1) -> URL:
         assert version <= NUM_CLI_VERSIONS  # NWS only stores 50 versions at this url
         url = NWS_FORECAST_HOME / "product.php"
         url = url.add_query(
@@ -97,10 +100,9 @@ class NWSClient:
         )
         return url
 
-    def _request_cli_data(
-        self, stationid: StationID, version: int = 1
-    ) -> requests.Response:
-        url = self.cli_url(stationid, version)
+    @staticmethod
+    def _request_cli_data(stationid: StationID, version: int = 1) -> requests.Response:
+        url = NWSClient.cli_url(stationid, version)
         response = requests.get(url)
         response.raise_for_status()
 
@@ -295,10 +297,14 @@ class NWSClient:
             valid_time=valid_datetime,
         )
 
+    @staticmethod
     @cached(cache=TTLCache(maxsize=1024, ttl=3600))
     def _request_observations_from_station(
-        self, stationid: StationID, start: datetime, end: datetime, radius: int = 0
-    ):
+        stationid: StationID, start: datetime, end: datetime, radius: int = 0
+    ) -> requests.Response:
+        assert start.tzinfo is not None
+        assert end.tzinfo is not None
+
         url = TIME_SERIES_BASE
         params = {
             "radius": f"k{stationid.value.lower()},{radius}",
@@ -310,16 +316,19 @@ class NWSClient:
         response = requests.get(url, params=params)
         response.raise_for_status()
 
-        res = response.json()
-
-        return res
+        return response
 
     def get_timeseries(
         self, stationid: StationID, start: datetime, end: datetime, radius: int = 0
     ) -> list[pd.DataFrame]:
+        if start.tzinfo is None:
+            start = STATION_TZ[stationid].localize(start)
+        if end.tzinfo is None:
+            end = STATION_TZ[stationid].localize(end)
+
         res = self._request_observations_from_station(
             stationid, start, end, radius=radius
-        )
+        ).json()
 
         station_dfs = []
         for station_obs in res["STATION"]:
@@ -337,6 +346,49 @@ class NWSClient:
             station_dfs.append(df)
 
         return station_dfs
+
+    @pathlike("output_dir")
+    def download_timeseries(
+        self,
+        stationid: StationID,
+        output_dir: Path,
+        start: datetime,
+        end: datetime,
+        radius: int = 0,
+        overwrite: bool = False,
+    ) -> DownloadTimeseriesResult:
+        days = pd.period_range(start=start, end=end, freq="D")
+        all_days_dfs: dict[str, pd.DataFrame] = defaultdict(pd.DataFrame)
+        for day in tqdm(days):
+            day = STATION_TZ[stationid].localize(day.to_timestamp())
+            data = self.get_timeseries(
+                stationid, day, day + timedelta(days=1), radius=radius
+            )
+            for df in data:
+                data_station = df["station_id"].iloc[0]
+                all_days_dfs[data_station] = pd.concat([all_days_dfs[data_station], df])
+
+        written_fps = []
+        downloaded_fps = []
+        for df in all_days_dfs.values():
+            output_fp = safe_open_dir(output_dir / f"{stationid}") / (
+                f"timeseries.{stationid}."
+                f"start-{start.strftime(PATH_DATETIME_FORMAT)}."
+                f"end-{end.strftime(PATH_DATETIME_FORMAT)}."
+                f"station-{df['station_id'].iloc[0]}."
+                f"distance-{df['distance'].iloc[0]}.csv"
+            )
+            downloaded_fps.append(output_fp)
+            if not output_fp.exists() or overwrite:
+                df.to_csv(output_fp, index=True)
+                written_fps.append(output_fp)
+
+        return DownloadTimeseriesResult(
+            requested_start=start,
+            requested_end=end,
+            written_filepaths=written_fps,
+            downloaded_filepaths=downloaded_fps,
+        )
 
     @pathlike("output_dir")
     def download_cli_data(
@@ -369,6 +421,86 @@ class NWSClient:
 
         return DownloadCLIsResult(
             written_filepaths=written_fps, downloaded_filepaths=downloaded_fps
+        )
+
+    @staticmethod
+    @cached(cache=TTLCache(maxsize=1024, ttl=3600))
+    def _request_one_minute_data(
+        stationid: StationID, start: datetime, end: datetime
+    ) -> requests.Response:
+        assert start.tzinfo is not None
+        assert end.tzinfo is not None
+
+        params = {
+            "station": stationid,
+            "vars": "tmpf",
+            "sts": start.astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "ets": end.astimezone(pytz.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "sample": "1min",
+            "what": "view",
+            "tz": "UTC",
+        }
+        url = ONE_MINUTE_BASE.add_query(**params)
+        response = requests.get(url)
+        response.raise_for_status()
+
+        return response
+
+    def get_one_minute_data(
+        self, stationid: StationID, start: datetime, end: datetime
+    ) -> pd.DataFrame:
+        if start.tzinfo is None:
+            start = STATION_TZ[stationid].localize(start)
+        if end.tzinfo is None:
+            end = STATION_TZ[stationid].localize(end)
+
+        res = self._request_one_minute_data(stationid, start, end)
+
+        df = pd.read_csv(StringIO(res.text), header=0)
+        df["valid(UTC)"] = pd.to_datetime(df["valid(UTC)"], utc=True)
+        df["valid(UTC)"] = df["valid(UTC)"].dt.tz_convert(STATION_TZ[stationid])
+
+        return df
+
+    @pathlike("output_dir")
+    def download_one_minute_data(
+        self,
+        stationid: StationID,
+        output_dir: Path,
+        start: datetime,
+        end: datetime,
+        overwrite: bool = False,
+    ) -> DownloadOneMinuteResult:
+        data = self.get_one_minute_data(stationid, start, end)
+        if len(data) == 0:
+            return DownloadOneMinuteResult(
+                num_rows=0,
+                requested_start=start,
+                requested_end=end,
+                true_start=None,
+                true_end=None,
+            )
+
+        true_start = data["valid(UTC)"].min()
+        true_end = data["valid(UTC)"].max()
+
+        output_fp = safe_open_dir(output_dir / f"{stationid}") / (
+            f"one_minute.{stationid}."
+            f"start-{true_start.strftime(PATH_DATETIME_FORMAT)}."
+            f"end-{true_end.strftime(PATH_DATETIME_FORMAT)}.csv"
+        )
+        if not output_fp.exists() or overwrite:
+            data.to_csv(output_fp, index=False)
+            num_rows = len(data)
+        else:
+            num_rows = 0
+
+        return DownloadOneMinuteResult(
+            num_rows=num_rows,
+            requested_start=start,
+            requested_end=end,
+            true_start=true_start,
+            true_end=true_end,
         )
 
 

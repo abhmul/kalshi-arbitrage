@@ -71,3 +71,20 @@ class CLI:
 class DownloadCLIsResult:
     written_filepaths: list[Path]
     downloaded_filepaths: list[Path]
+
+
+@dataclass
+class DownloadOneMinuteResult:
+    num_rows: int
+    requested_start: datetime
+    requested_end: datetime
+    true_start: datetime | None
+    true_end: datetime | None
+
+
+@dataclass
+class DownloadTimeseriesResult:
+    requested_start: datetime
+    requested_end: datetime
+    written_filepaths: list[Path]
+    downloaded_filepaths: list[Path]

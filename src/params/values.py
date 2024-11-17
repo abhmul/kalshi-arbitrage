@@ -17,12 +17,17 @@ NWS_POINTS = NWS_API_BASE / "points"
 # CLI_API_BASE = URL("https://api.weather.gov/products/types/CLI")
 TIME_SERIES_BASE = URL("https://api.synopticdata.com/v2/stations/timeseries")
 
-PUBLIC_TOKEN = "b950a4463c7e4053a4fcd1f1457fff17"
+# PUBLIC_TOKEN = "b950a4463c7e4053a4fcd1f1457fff17"
+PUBLIC_TOKEN = "32ca91845dcc436e837a9fc218cdc357"
 
 NYC = (40.7833546, -73.9649732)
 
 # ACIS API
 ACIS_API_BASE = URL("https://data.rcc-acis.org/")
+
+# One Minute ASOS Data
+# https://mesonet.agron.iastate.edu/cgi-bin/request/asos1min.py?station=MDW&vars=tmpf&sts=2022-01-01T00:00Z&ets=2023-01-01T00:00Z&sample=1min&what=view&tz=UTC
+ONE_MINUTE_BASE = URL("https://mesonet.agron.iastate.edu/cgi-bin/request/asos1min.py")
 
 
 class StationID(Enum):
