@@ -7,6 +7,7 @@ from typing import Dict, Callable, Any
 from inspect import signature
 from pathlib import Path
 import sys
+from glob import glob as _glob
 
 from .params import TMP_DIR
 
@@ -30,11 +31,15 @@ def pathlike(*arg_names: str):
 
         def decorated_func(*args, **kwargs):
             bound_sig = function_sig.bind(*args, **kwargs)
+            # print(kwargs)
+            # print(bound_sig)
+            # print(bound_sig.args)
+            # print(bound_sig.kwargs)
 
             for arg_name in arg_names:
                 to_path = bound_sig.arguments[arg_name]
                 bound_sig.arguments[arg_name] = Path(to_path)
-            res = func(**bound_sig.arguments)
+            res = func(*bound_sig.args, **bound_sig.kwargs)
 
             return res
 
@@ -64,6 +69,11 @@ def tag_file(fp: Path, **tags: str) -> Path:
     new_canonical_filename = "_".join([fp.stem] + tag_strs)
 
     return fp.parent / (new_canonical_filename + fp.suffix)
+
+
+@pathlike("pattern")
+def glob(pattern: Path) -> list[Path]:
+    return [Path(fp) for fp in _glob(str(pattern))]
 
 
 ### These two methods are useful for manipulating files that may need to

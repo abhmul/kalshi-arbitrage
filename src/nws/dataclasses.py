@@ -4,6 +4,8 @@ from datetime import datetime, date
 from enum import Enum
 from urlpath import URL  # type: ignore[import-untyped]
 
+from ..params import StationID
+
 
 class TemperatureType(Enum):
     HIGH = "high"
@@ -68,9 +70,27 @@ class CLI:
 
 
 @dataclass
+class CLIPathParse:
+    station: StationID
+    issuance_time: datetime
+    summary_date: date
+    output_dir: Path
+    path: Path
+
+
+@dataclass
 class DownloadCLIsResult:
     written_filepaths: list[Path]
     downloaded_filepaths: list[Path]
+
+
+@dataclass
+class OneMinutePathParse:
+    station: StationID
+    start: datetime
+    end: datetime
+    output_dir: Path
+    path: Path
 
 
 @dataclass

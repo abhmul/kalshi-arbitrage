@@ -2,7 +2,6 @@ from io import StringIO
 from typing import Any, cast
 import requests  # type: ignore[import-untyped]
 from datetime import datetime, date, timedelta
-from dateutil import parser
 import re
 import pytz
 from collections import defaultdict
@@ -13,10 +12,12 @@ import pandas as pd
 from tqdm import tqdm  # type: ignore[import-untyped]
 
 from ..params import *
-from ..file_utils import pathlike, safe_open_dir
+from ..file_utils import pathlike, safe_open_dir, safe_open_file
 
 from .dataclasses import *
 from .utils import normalize_time_str
+from .cli import parse_product_text, cli_path
+from .one_minute import one_minute_path
 
 
 class NWSClient:
@@ -135,167 +136,7 @@ class NWSClient:
                 match_end_i = i
 
         cli_text = "\n".join(lines[match_start_i : match_end_i + 1])
-        return NWSClient._parse_product_text(cli_text)
-
-    @staticmethod
-    def _parse_product_text(
-        product_text: str,
-    ) -> CLI:
-        # Extract relevant sections using regular expressions
-
-        lines = product_text.splitlines()
-
-        # Extract the site - line 1
-        line_i = 0
-        site_re = re.compile(r"CDUS\d+\sK([A-Z]{3})")
-        while (match := re.search(site_re, lines[line_i])) is None:
-            line_i += 1
-            if line_i >= len(lines):
-                raise ValueError("Could not find the site in the product text")
-        site = match.group(1)
-        line_i += 1
-
-        station_re = re.compile(r"CLI([A-Z]{3})")
-        while (match := re.search(station_re, lines[line_i])) is None:
-            line_i += 1
-            if line_i >= len(lines):
-                raise ValueError("Could not find the station in the product text")
-        station = StationID(match.group(1))
-        line_i += 1
-
-        # Check integrity of following lines
-        assert lines[line_i].strip() == ""
-        line_i += 1
-        assert lines[line_i].strip().startswith("CLIMATE REPORT")
-        line_i += 1
-        assert lines[line_i].strip().startswith("NATIONAL WEATHER SERVICE")
-        line_i += 1
-
-        # Extract the issuance datetime
-        # Add a colon to the issuance datetime string
-        split_issuance = lines[line_i].split()
-        if len(split_issuance[0]) == 3:
-            split_issuance[0] = "0" + split_issuance[0]
-        split_issuance[0] = split_issuance[0][:2] + ":" + split_issuance[0][2:]
-        issuance_datetime = parser.parse(" ".join(split_issuance), ignoretz=True)
-        issuance_datetime = STATION_TZ[station].localize(issuance_datetime)
-        line_i += 1
-
-        # Summary date
-        summary_date_re = re.compile(r"CLIMATE\sSUMMARY\sFOR\s(.+?)\.\.\.")
-        while (match := re.search(summary_date_re, lines[line_i])) is None:
-            line_i += 1
-            if line_i >= len(lines):
-                raise ValueError("Could not find the summary date in the product text")
-        summary_date = parser.parse(match.group(1)).date()
-        line_i += 1
-
-        # Valid time if it is there - line 11
-        valid_datetime = None
-        if "VALID" in lines[line_i]:
-            match = re.search(
-                r"AS\s+OF\s+(\d{4}\s+(AM|PM))\s+LOCAL\s+TIME", lines[line_i]
-            )
-            assert match is not None
-            valid_time = datetime.strptime(match.group(1), "%I%M %p").time()
-            valid_datetime = datetime.combine(summary_date, valid_time)
-            valid_datetime = STATION_TZ[station].localize(valid_datetime)
-            line_i += 1
-
-        # Extract the temperature data
-        temp_re = re.compile(r"TEMPERATURE\s+\(F\)")
-        while (match := re.search(temp_re, lines[line_i])) is None:
-            line_i += 1
-            if line_i >= len(lines):
-                raise ValueError(
-                    "Could not find the temperature data in the product text"
-                )
-        line_i += 1
-
-        if (issuance_datetime.date() - summary_date) == timedelta(days=1):
-            assert "YESTERDAY" == lines[line_i].strip()
-        elif (issuance_datetime.date() - summary_date) == timedelta(days=0):
-            assert "TODAY" == lines[line_i].strip()
-        else:
-            raise ValueError("Could not find the correct day for the temperature data")
-        line_i += 1
-
-        # Maximum
-        match = re.search(
-            r"MAXIMUM\s+(\d+|(MM))R?\s+((\d{1,2}:?\d{2}\s(PM|AM))|(MM))", lines[line_i]
-        )
-        assert match is not None
-        if match.group(1) == "MM":
-            max_temp = None
-        else:
-            max_temp = int(match.group(1))
-        if match.group(3) == "MM":
-            max_temp_datetime = None
-        else:
-            max_temp_time_str = normalize_time_str(match.group(3))
-            max_temp_time = datetime.strptime(max_temp_time_str, "%I:%M %p").time()
-            max_temp_datetime = STATION_TZ[station].localize(
-                datetime.combine(summary_date, max_temp_time)
-            )
-        line_i += 1
-
-        # Minimum
-        min_re = re.compile(
-            r"MINIMUM\s+(\d+|(MM))R?\s+((\d{1,2}:?\d{2}\s(PM|AM))|(MM))"
-        )
-        tod_yest_re = re.compile(r"(TODAY|YESTERDAY)")
-        while (match := re.search(min_re, lines[line_i])) is None:
-            line_i += 1
-            if re.search(tod_yest_re, lines[line_i]) is not None or line_i >= len(
-                lines
-            ):
-                raise ValueError(
-                    "Could not find the minimum temperature data in the product text"
-                )
-        if match.group(1) == "MM":
-            min_temp = None
-        else:
-            min_temp = int(match.group(1))
-        if match.group(3) == "MM":
-            min_temp_datetime = None
-        else:
-            min_temp_time_str = normalize_time_str(match.group(3))
-            min_temp_time = datetime.strptime(min_temp_time_str, "%I:%M %p").time()
-            min_temp_datetime = STATION_TZ[station].localize(
-                datetime.combine(summary_date, min_temp_time)
-            )
-        line_i += 1
-
-        # Average
-        avg_re = re.compile(r"AVERAGE\s+(\d+|(MM))R?")
-        while (match := re.search(avg_re, lines[line_i])) is None:
-            line_i += 1
-            if re.search(tod_yest_re, lines[line_i]) is not None or line_i >= len(
-                lines
-            ):
-                raise ValueError(
-                    "Could not find the average temperature data in the product text"
-                )
-        if match.group(1) == "MM":
-            avg_temp = None
-        else:
-            avg_temp = int(match.group(1))
-            line_i += 1
-
-        # TODO Precipitation, Snowfall, Wind, Sky Cover, Weather Conditions, Relative Humidity
-
-        return CLI(
-            issuance_time=issuance_datetime,
-            issuing_office=site,
-            summary_date=summary_date,
-            raw_text=product_text,
-            max_temp=max_temp,
-            max_temp_time=max_temp_datetime,
-            min_temp=min_temp,
-            min_temp_time=min_temp_datetime,
-            avg_temp=avg_temp,
-            valid_time=valid_datetime,
-        )
+        return parse_product_text(cli_text)
 
     @staticmethod
     @cached(cache=TTLCache(maxsize=1024, ttl=3600))
@@ -408,10 +249,13 @@ class NWSClient:
         prog = tqdm(versions) if len(versions) > 1 else versions
         for version in prog:
             cli = self.get_cli_data(stationid, version)
-            output_fp = safe_open_dir(output_dir / f"{stationid}") / (
-                f"cli.{stationid}."
-                f"issued-{cli.issuance_time.strftime(PATH_DATETIME_FORMAT)}."
-                f"summary-{cli.summary_date.strftime(PATH_DATE_FORMAT)}.txt"
+            output_fp = safe_open_file(
+                cli_path(
+                    station=stationid,
+                    issuance_datetime=cli.issuance_time,
+                    summary_date=cli.summary_date,
+                    output_dir=output_dir,
+                )
             )
             downloaded_fps.append(output_fp)
             if not output_fp.exists() or overwrite:
@@ -458,7 +302,8 @@ class NWSClient:
 
         df = pd.read_csv(StringIO(res.text), header=0)
         df["valid(UTC)"] = pd.to_datetime(df["valid(UTC)"], utc=True)
-        df["valid(UTC)"] = df["valid(UTC)"].dt.tz_convert(STATION_TZ[stationid])
+        df["valid"] = df["valid(UTC)"].dt.tz_convert(STATION_TZ[stationid])
+        df.drop(columns=["valid(UTC)"], inplace=True)
 
         return df
 
@@ -481,13 +326,13 @@ class NWSClient:
                 true_end=None,
             )
 
-        true_start = data["valid(UTC)"].min()
-        true_end = data["valid(UTC)"].max()
+        true_start = data["valid"].min()
+        true_end = data["valid"].max()
 
-        output_fp = safe_open_dir(output_dir / f"{stationid}") / (
-            f"one_minute.{stationid}."
-            f"start-{true_start.strftime(PATH_DATETIME_FORMAT)}."
-            f"end-{true_end.strftime(PATH_DATETIME_FORMAT)}.csv"
+        output_fp = safe_open_file(
+            one_minute_path(
+                station=stationid, start=true_start, end=true_end, output_dir=output_dir
+            )
         )
         if not output_fp.exists() or overwrite:
             data.to_csv(output_fp, index=False)

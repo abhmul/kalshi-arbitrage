@@ -3,8 +3,6 @@ This file contains the filepaths used for the python project.
 Data points from src directory, not the directory this file is in. 
 """
 
-from glob import glob
-import os
 from pathlib import Path
 
 PROJECT_DIR = Path("../")
