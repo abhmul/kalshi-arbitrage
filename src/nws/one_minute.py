@@ -12,10 +12,10 @@ from .dataclasses import *
 
 SCHEMA = {
     "station": StationID,
-    "station_name": pd.StringDtype,
+    "station_name": pd.StringDtype(),
     "valid": datetime,
     "valid(UTC)": datetime,  # Deprecated, remove when all files have been fixed
-    "tmpf": pd.Int64Dtype,
+    "tmpf": pd.Int64Dtype(),
 }
 
 

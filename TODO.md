@@ -1,6 +1,7 @@
 # TODO
 
 - [ ] Setup error bars on timeseries data
+- [ ] Rewrite code to work in UTC. This will get around daylight-savings issues
 
 ## Basic Design Ideas
 

@@ -1,18 +1,24 @@
 from pathlib import Path
 from datetime import datetime, date, time
+from typing import Any
 
 import pandas as pd
 
 from .file_utils import pathlike
 
-PD_INT_DTYPES: list[type] = [pd.Int64Dtype, pd.Int32Dtype, pd.Int16Dtype, pd.Int8Dtype]
-PD_FLOAT_DTYPES: list[type] = [pd.Float64Dtype, pd.Float32Dtype]
-PD_STRING_DTYPES: list[type] = [pd.StringDtype]
+PD_INT_DTYPES: list = [
+    pd.Int64Dtype(),
+    pd.Int32Dtype(),
+    pd.Int16Dtype(),
+    pd.Int8Dtype(),
+]
+PD_FLOAT_DTYPES: list = [pd.Float64Dtype(), pd.Float32Dtype()]
+PD_STRING_DTYPES: list = [pd.StringDtype()]
 
 PD_DTYPES = PD_INT_DTYPES + PD_FLOAT_DTYPES + PD_STRING_DTYPES
 
 
-def coerce_to_schema(df: pd.DataFrame, schema: dict[str, type]) -> pd.DataFrame:
+def coerce_to_schema(df: pd.DataFrame, schema: dict[str, Any]) -> pd.DataFrame:
     """
     Coerce a DataFrame to a schema.
 
@@ -31,7 +37,7 @@ def coerce_to_schema(df: pd.DataFrame, schema: dict[str, type]) -> pd.DataFrame:
     for col, dtype in schema.items():
         if col in df.columns:
             if dtype in PD_DTYPES:
-                df[col] = df[col].astype(dtype())
+                df[col] = df[col].astype(dtype)
             elif dtype == datetime:
                 df[col] = pd.to_datetime(df[col])
             elif dtype == date:

@@ -1,4 +1,6 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
+from datetime import tzinfo
+from pytz.tzinfo import BaseTzInfo
 
 from ..params import *
 
@@ -27,6 +29,26 @@ def normalize_time_str(time_str: str) -> str:
         time = "0" + time
     time_str = " ".join([time, pm_am])
     return time_str
+
+
+def start_of_day(date_: date, tz: BaseTzInfo | None = None) -> datetime:
+    """
+    Get the start of the day for a date.
+    """
+    dt = datetime.combine(date_, time.min)
+    if tz is not None:
+        dt = tz.localize(dt)
+    return dt
+
+
+def end_of_day(date_: date, tz: BaseTzInfo | None = None) -> datetime:
+    """
+    Get the end of the day for a date.
+    """
+    dt = datetime.combine(date_, time.max)
+    if tz is not None:
+        dt = tz.localize(dt)
+    return dt
 
 
 def in_date_range(
