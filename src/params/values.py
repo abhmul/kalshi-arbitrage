@@ -36,6 +36,9 @@ class StationID(Enum):
     MIA = "MIA"  # Miami, FL
     MDW = "MDW"  # Chicago, IL
     PIR = "PIR"  # Pierre, SD
+    DEN = "DEN"  # Denver, CO
+    PHL = "PHL"  # Philadelphia, PA
+    HOU = "HOU"  # Houston, TX
 
     def __str__(self):
         return self.value
@@ -50,11 +53,15 @@ STATION_TZ = {
     StationID.MIA: pytz.timezone("America/New_York"),
     StationID.MDW: pytz.timezone("America/Chicago"),
     StationID.PIR: pytz.timezone("America/Chicago"),
+    StationID.DEN: pytz.timezone("America/Denver"),
+    StationID.PHL: pytz.timezone("America/New_York"),
+    StationID.HOU: pytz.timezone("America/Chicago"),
 }
 
 TZ_INFOS = {
     "EST": pytz.timezone("America/New_York"),
     "CST": pytz.timezone("America/Chicago"),
+    "MST": pytz.timezone("America/Denver"),
 }
 
 SITE_ID = {
@@ -63,6 +70,9 @@ SITE_ID = {
     StationID.MIA: "MFL",
     StationID.MDW: "LOT",
     StationID.PIR: "ABR",
+    StationID.DEN: "BOU",
+    StationID.PHL: "PHI",
+    StationID.HOU: "HGX",
 }
 
 BASE_TZ = pytz.timezone("America/Chicago")

@@ -17,6 +17,9 @@ class DownloadMode(Enum):
     TEMP = "temp"
     ONE_MINUTE = "one_minute"
 
+    def __str__(self):
+        return self.value
+
 
 parser = argparse.ArgumentParser(description="Download data from the internet")
 
