@@ -40,16 +40,19 @@ class CLIInfo:
 
 @dataclass
 class CLI:
+    station: StationID
     issuance_time: datetime
     issuing_office: str
     summary_date: date
     raw_text: str
+    is_afternoon_report: bool
     max_temp: int | None
     max_temp_time: datetime | None
     min_temp: int | None
     min_temp_time: datetime | None
     avg_temp: int | None
     valid_time: datetime | None = None
+    is_correction: bool = False
 
     # precipitation: float | None = None
     # precipitation_month_to_date: float | None = None

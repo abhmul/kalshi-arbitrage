@@ -1,6 +1,7 @@
 from urlpath import URL  # type: ignore[import-untyped]
 from enum import Enum
 import pytz
+import functools
 
 EP = 1e-5
 PROD_API_BASE = URL("https://api.elections.kalshi.com/trade-api/v2")
@@ -30,6 +31,7 @@ ACIS_API_BASE = URL("https://data.rcc-acis.org/")
 ONE_MINUTE_BASE = URL("https://mesonet.agron.iastate.edu/cgi-bin/request/asos1min.py")
 
 
+@functools.total_ordering
 class StationID(Enum):
     NYC = "NYC"  # New York, NY
     AUS = "AUS"  # Austin, TX
@@ -42,6 +44,11 @@ class StationID(Enum):
 
     def __str__(self):
         return self.value
+
+    def __lt__(self, other):
+        if not isinstance(other, StationID):
+            return NotImplemented
+        return self.value < other.value
 
 
 NUM_CLI_VERSIONS = 50

@@ -3,7 +3,7 @@ Utilities for manipulation of NWS CLIs
 """
 
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from dateutil import parser
 from pathlib import Path
 
@@ -222,15 +222,23 @@ def parse_product_text(
 
     # TODO Precipitation, Snowfall, Wind, Sky Cover, Weather Conditions, Relative Humidity
 
+    is_correction = "CORRECTED" in product_text
+    is_afternoon_report = valid_datetime is not None and valid_datetime.time() >= time(
+        11, 0
+    )
+
     return CLI(
+        station=station,
         issuance_time=issuance_datetime,
         issuing_office=site,
         summary_date=summary_date,
         raw_text=product_text,
+        is_afternoon_report=is_afternoon_report,
         max_temp=max_temp,
         max_temp_time=max_temp_datetime,
         min_temp=min_temp,
         min_temp_time=min_temp_datetime,
         avg_temp=avg_temp,
         valid_time=valid_datetime,
+        is_correction=is_correction,
     )
